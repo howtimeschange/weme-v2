@@ -1,0 +1,52 @@
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+*.egg
+
+# 数据目录（不提交用户数据）
+data/
+logs/
+memory/summaries/
+memory/raw/
+memory/checkpoints/
+memory/exports/
+profiles/contacts/
+
+# 保留占位
+!memory/summaries/.gitkeep
+!memory/raw/.gitkeep
+!memory/checkpoints/.gitkeep
+!memory/exports/.gitkeep
+!profiles/contacts/.gitkeep
+
+# 环境
+.env
+.env.local
+*.env
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# macOS
+.DS_Store
+
+# 打包输出
+dist/
+*.app/
+*.dmg
+*.exe
+*.spec
+
+# 测试
+.pytest_cache/
+.coverage
+htmlcov/

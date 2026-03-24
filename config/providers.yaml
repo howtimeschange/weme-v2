@@ -1,0 +1,40 @@
+# LLM Provider 配置
+
+deepseek:
+  enabled: true
+  base_url: https://api.deepseek.com
+  api_key_env: DEEPSEEK_API_KEY
+  models:
+    - deepseek-chat
+    - deepseek-reasoner
+  timeout_ms: 15000
+  retry: 2
+
+minimax:
+  enabled: true
+  base_url: https://api.minimax.io/v1
+  api_key_env: MINIMAX_API_KEY
+  models:
+    - MiniMax-M2.5
+    - MiniMax-M1
+  timeout_ms: 15000
+  retry: 2
+
+anthropic:
+  enabled: true
+  base_url: https://api.anthropic.com/v1
+  api_key_env: ANTHROPIC_API_KEY
+  models:
+    - claude-sonnet-4-20250514
+    - claude-haiku-4-20250514
+  timeout_ms: 20000
+  retry: 2
+
+mock:
+  enabled: true
+  base_url: ""
+  api_key_env: ""
+  models:
+    - mock-v1
+  timeout_ms: 100
+  retry: 0

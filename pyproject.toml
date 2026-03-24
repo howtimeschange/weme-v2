@@ -1,0 +1,42 @@
+[project]
+name = "weme"
+version = "2.0.0"
+description = "虾说 - 接替人工处理微信/钉钉/飞书消息的桌面助手，支持 macOS & Windows"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.10"
+dependencies = [
+    "typer>=0.9",
+    "pyyaml>=6.0",
+    "httpx>=0.25",
+    "pyautogui>=0.9",
+]
+
+[project.optional-dependencies]
+macos = [
+    "pyobjc-framework-Cocoa",
+]
+windows = [
+    "pywin32",
+    "comtypes",
+    "pyperclip",
+]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov",
+    "pyinstaller>=6.0",
+]
+
+[project.scripts]
+weme = "weme.cli:app"
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]

@@ -1,0 +1,26 @@
+# 回复规则配置
+
+# 白名单：仅对这些会话自动回复（空则不限制）
+whitelist_chats: []
+
+# 黑名单：不自动回复这些会话
+blacklist_chats: []
+
+# 活跃时段（24 小时制，超出范围不自动发送）
+active_hours:
+  start: 8
+  end: 23
+
+# 高风险敏感词（命中则强制人工审核）
+sensitive_keywords:
+  - 转账
+  - 汇款
+  - 借钱
+  - 投资
+  - 保证
+  - 身份证
+  - 银行卡号
+  - 验证码
+
+# 每小时最多自动回复次数（0 表示不限制）
+max_auto_replies_per_hour: 30

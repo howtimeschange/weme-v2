@@ -1,0 +1,23 @@
+# Weme v2 运行配置
+provider: mock          # mock | deepseek | minimax | anthropic | openai_compat
+model: ""               # 留空则使用 provider 默认模型
+api_key: $WEME_API_KEY  # 从环境变量读取
+base_url: ""            # 留空则使用 provider 默认地址
+
+default_mode: hybrid    # suggest | auto | hybrid
+poll_interval: 3.0      # 轮询间隔（秒）
+
+max_reply_chars: 120    # 最大回复字数
+history_window: 10      # 历史消息窗口
+
+workspace_root: ~/.weme  # 数据存储根目录
+
+# 钉钉工作模式（仅影响钉钉，开启后限制工作时段和白名单）
+dingtalk_work_mode: false
+dingtalk_whitelist: []   # 允许自动回复的联系人白名单，空为不限制
+
+# Fallback provider（主模型失败时切换）
+fallback_provider: ""
+fallback_model: ""
+fallback_api_key: ""
+fallback_base_url: ""
