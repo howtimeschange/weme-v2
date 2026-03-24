@@ -88,6 +88,7 @@ class TaskExecutor:
 
         try:
             adapter = get_app_adapter(task.app.value)
+            plat = getattr(adapter, "_platform", None)
 
             # 激活 App 并搜索目标
             adapter.activate()
@@ -95,12 +96,31 @@ class TaskExecutor:
 
             ok = adapter.open_chat(task.target)
             if not ok:
-                # 尝试拿到平台层的详细错误
-                plat = getattr(adapter, "_platform", None)
                 extra = getattr(plat, "_last_error", "") or ""
                 hint = extra[:100] if extra else "请确认辅助功能权限已开启"
                 raise RuntimeError(f"未能打开「{task.target}」: {hint}")
-            time.sleep(0.8)
+
+            # ── 验证窗口标题包含目标名称 ──────────────────────────────
+            # 微信/钉钉聊天窗口标题格式各异，只要包含目标名即视为成功
+            # 等待最多 5 秒
+            process_map = {"wechat": "WeChat", "dingtalk": "DingTalk", "feishu": "Lark"}
+            proc = process_map.get(task.app.value, "")
+            verified = False
+            if proc and plat and hasattr(plat, "get_frontmost_window_title"):
+                for _ in range(10):  # 最多等 5 秒
+                    title = plat.get_frontmost_window_title(proc)
+                    if task.target in title:
+                        verified = True
+                        break
+                    time.sleep(0.5)
+                if not verified:
+                    title = plat.get_frontmost_window_title(proc)
+                    raise RuntimeError(
+                        f"搜索后窗口标题不匹配：期望包含「{task.target}」，实际「{title or '(空)'}」\n"
+                        f"请确认群聊/联系人名称与微信中完全一致（包括空格）"
+                    )
+            else:
+                time.sleep(1.0)  # 无法验证时等待 1 秒
 
             # 发送文字
             if task.msg_type in (MsgType.TEXT, MsgType.BOTH):

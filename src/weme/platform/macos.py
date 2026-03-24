@@ -68,35 +68,28 @@ end run
 # ── 微信：搜索并打开聊天 ───────────────────────────────────────────────────────
 # argv: 1=appName(真实App名), 2=contactName
 # 微信进程名始终是 WeChat（CFBundleExecutable），和显示名无关。
+# 搜索脚本只接收 appName（argv 1）和 processName（argv 2）
+# 联系人名已由 Python 层通过 pbcopy 写入剪贴板，脚本直接 Cmd+V 粘贴
 _WECHAT_OPEN_CHAT_SCRIPT = """
 on run argv
     set appName to item 1 of argv
-    set contactName to item 2 of argv
     set didOpen to false
-
-    -- 先把联系人名写入剪贴板（避免 keystroke 经过输入法乱码）
-    set the clipboard to contactName
 
     tell application appName to activate
     delay 0.8
 
     tell application "System Events"
         tell process "WeChat"
-            -- 触发全局搜索 Cmd+F
             keystroke "f" using command down
             delay 0.8
-
-            -- 清空搜索框，粘贴中文名称
             keystroke "a" using command down
-            delay 0.1
-            keystroke "v" using command down  -- Cmd+V 粘贴
-            delay 1.2
-
-            -- ↓ 选第一个结果，Enter 打开
-            key code 125  -- down arrow
-            delay 0.3
-            key code 36   -- return / enter
-            delay 0.6
+            delay 0.15
+            keystroke "v" using command down
+            delay 1.5
+            key code 125
+            delay 0.4
+            key code 36
+            delay 0.8
             set didOpen to true
         end tell
     end tell
@@ -104,14 +97,10 @@ on run argv
 end run
 """
 
-# ── 钉钉：搜索并打开聊天 ───────────────────────────────────────────────────────
 _DINGTALK_OPEN_CHAT_SCRIPT = """
 on run argv
     set appName to item 1 of argv
-    set contactName to item 2 of argv
     set didOpen to false
-
-    set the clipboard to contactName
 
     tell application appName to activate
     delay 0.8
@@ -120,16 +109,14 @@ on run argv
         tell process "DingTalk"
             keystroke "f" using command down
             delay 0.8
-
             keystroke "a" using command down
-            delay 0.1
+            delay 0.15
             keystroke "v" using command down
-            delay 1.2
-
-            key code 125  -- down
-            delay 0.3
-            key code 36   -- enter
-            delay 0.6
+            delay 1.5
+            key code 125
+            delay 0.4
+            key code 36
+            delay 0.8
             set didOpen to true
         end tell
     end tell
@@ -137,33 +124,26 @@ on run argv
 end run
 """
 
-# ── 飞书：搜索并打开聊天 ───────────────────────────────────────────────────────
 _FEISHU_OPEN_CHAT_SCRIPT = """
 on run argv
     set appName to item 1 of argv
-    set contactName to item 2 of argv
     set didOpen to false
-
-    set the clipboard to contactName
 
     tell application appName to activate
     delay 0.8
 
     tell application "System Events"
         tell process "Lark"
-            -- 飞书全局搜索 Cmd+K
             keystroke "k" using command down
             delay 0.8
-
             keystroke "a" using command down
-            delay 0.1
+            delay 0.15
             keystroke "v" using command down
-            delay 1.2
-
-            key code 125  -- down
-            delay 0.3
-            key code 36   -- enter
-            delay 0.6
+            delay 1.5
+            key code 125
+            delay 0.4
+            key code 36
+            delay 0.8
             set didOpen to true
         end tell
     end tell
@@ -271,14 +251,23 @@ class MacOSPlatform(PlatformAutomation):
         return self._run_open_chat(_FEISHU_OPEN_CHAT_SCRIPT, app_name, name)
 
     def _run_open_chat(self, script: str, app_name: str, contact_name: str) -> bool:
+        # ① Python 层用 pbcopy 写剪贴板，保证中文 UTF-8 正确
+        subprocess.run(
+            ["pbcopy"],
+            input=contact_name.encode("utf-8"),
+            check=True,
+        )
+        time.sleep(0.1)
+
+        # ② AppleScript 只负责 UI 操作（Cmd+F / Cmd+V / ↓ / Enter）
+        #    不再传 contact_name，避免 AppleScript 字符集问题
         try:
             result = subprocess.run(
-                ["osascript", "-e", script, app_name, contact_name],
+                ["osascript", "-e", script, app_name],
                 capture_output=True, text=True, timeout=20,
             )
             out = result.stdout.strip().lower()
             if result.returncode != 0 or (result.stderr and "error" in result.stderr.lower()):
-                # 记录 stderr 方便调试，但不抛出——返回 False 让调用方处理
                 self._last_error = result.stderr.strip()
             else:
                 self._last_error = ""
@@ -288,6 +277,27 @@ class MacOSPlatform(PlatformAutomation):
             return False
 
     # ── Accessibility read ────────────────────────────────────────────────
+
+    def get_frontmost_window_title(self, process_name: str) -> str:
+        """Return the title of the frontmost window for *process_name*."""
+        script = f"""
+tell application "System Events"
+    tell process "{process_name}"
+        try
+            return title of front window
+        end try
+    end tell
+end tell
+return ""
+"""
+        try:
+            result = subprocess.run(
+                ["osascript", "-e", script],
+                capture_output=True, text=True, timeout=5,
+            )
+            return result.stdout.strip()
+        except Exception:
+            return ""
 
     def read_accessibility(self, process_name: str) -> str:
         """Read flat text from the accessibility tree."""
