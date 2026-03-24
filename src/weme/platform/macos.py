@@ -135,9 +135,16 @@ on run argv
     set didOpen to false
 
     tell application appName to activate
-    delay 0.8
+    delay 0.5
 
+    -- 等待钉钉真正成为前台
     tell application "System Events"
+        set waited to 0
+        repeat while (frontmost of process "DingTalk") is false and waited < 30
+            delay 0.1
+            set waited to waited + 1
+        end repeat
+
         tell process "DingTalk"
             keystroke "f" using command down
             delay 0.8
@@ -146,8 +153,7 @@ on run argv
             keystroke "v" using command down
             delay 1.5
 
-            -- 钉钉搜索：第一项"你可能想找"已经是最匹配结果，直接 Enter 确认即可
-            -- 不按 ↓，直接 Enter 选择"你可能想找"高亮项
+            -- 钉钉搜索：直接 Enter 选择"你可能想找"高亮项
             key code 36
             delay 0.8
             set didOpen to true
@@ -271,105 +277,99 @@ class MacOSPlatform(PlatformAutomation):
 
     def open_chat_wechat(self, name: str) -> bool:
         """Search for *name* in WeChat using global search page, click 群聊 result."""
-        import pyautogui
-
         app_name = self._resolve_app_name("WeChat")
 
         # ① pbcopy 写剪贴板
         subprocess.run(["pbcopy"], input=name.encode("utf-8"), check=True)
         time.sleep(0.1)
 
-        # ② 激活微信，打开搜索，粘贴，Enter 进入全局搜索结果页
-        script_enter_search = f"""
+        # ② 完整的单段 AppleScript：激活微信并等待 frontmost，再操作
+        script = f"""
 tell application "{app_name}" to activate
-delay 0.8
+delay 0.5
+
+-- 等待微信真正成为前台进程（最多等 3 秒）
 tell application "System Events"
+    set waited to 0
+    repeat while (frontmost of process "WeChat") is false and waited < 30
+        delay 0.1
+        set waited to waited + 1
+    end repeat
+
     tell process "WeChat"
+        -- 打开搜索框
         keystroke "f" using command down
         delay 0.8
+        -- 清空并粘贴（已由 Python pbcopy 写入剪贴板）
         keystroke "a" using command down
         delay 0.15
         keystroke "v" using command down
-        delay 1.5
+        delay 1.8
+
+        -- Enter 进入全局搜索结果页
         key code 36
-        delay 1.5
-    end tell
-end tell
-"""
-        subprocess.run(["osascript", "-e", script_enter_search],
-                       capture_output=True, timeout=10)
+        delay 2.0
 
-        # ③ 用 pyautogui 截图，找「群聊」文字下第一个结果
-        #    微信搜索结果页有分区标题「群组」或「群聊」，结果在标题下方
-        #    用 locateOnScreen 找目标名称或点击「群组」分区第一项
-        try:
-            import PIL.Image
-            # 截取微信窗口区域的屏幕截图
-            screenshot = pyautogui.screenshot()
-            # 在截图里找「群聊」分组标题下方第一个可点击结果
-            # 策略：找到屏幕上含 name 文字的位置并判断是否在「群聊」分组下
-            # pyautogui.locateOnScreen 需要图片模板，改用 AX 方式
-        except Exception:
-            pass
+        -- 在搜索结果页里找「群组」或「群聊」Tab
+        -- 微信搜索结果用 radio button group 展示分类
+        set foundTab to false
 
-        # ④ 用 AppleScript Accessibility 找微信搜索结果页里的「群组」Tab 并点击
-        script_click_group_tab = """
-tell application "System Events"
-    tell process "WeChat"
+        -- 尝试 radio button（在 front window 里）
         try
-            set frontWin to front window
-            -- 搜索结果分类 Tab 通常是 radio button 形式
-            -- 遍历所有 radio button，找标题包含"群"的那个
-            set allRadios to every radio button of frontWin
+            set allRadios to every radio button of front window
             repeat with rb in allRadios
                 if title of rb contains "群" then
                     click rb
-                    delay 0.5
-                    -- ↓ 选第一个结果 Enter
-                    key code 125
-                    delay 0.4
-                    key code 36
-                    delay 0.8
-                    return "true"
+                    set foundTab to true
+                    delay 0.6
+                    exit repeat
                 end if
             end repeat
-            -- fallback: 深度搜索 toolbar / group 里的 radio button
-            set allGroups to every group of frontWin
-            repeat with grp in allGroups
-                try
-                    set rbs to every radio button of grp
-                    repeat with rb in rbs
-                        if title of rb contains "群" then
-                            click rb
-                            delay 0.5
-                            key code 125
-                            delay 0.4
-                            key code 36
-                            delay 0.8
-                            return "true"
-                        end if
-                    end repeat
-                end try
-            end repeat
         end try
-        return "false"
+
+        -- fallback: group 层级里找
+        if not foundTab then
+            try
+                set allGroups to every group of front window
+                repeat with grp in allGroups
+                    try
+                        set rbs to every radio button of grp
+                        repeat with rb in rbs
+                            if title of rb contains "群" then
+                                click rb
+                                set foundTab to true
+                                delay 0.6
+                                exit repeat
+                            end if
+                        end repeat
+                    end try
+                    if foundTab then exit repeat
+                end repeat
+            end try
+        end if
+
+        -- ↓ + Enter 选第一个群聊结果
+        key code 125
+        delay 0.5
+        key code 36
+        delay 1.0
     end tell
 end tell
+return "true"
 """
         try:
             result = subprocess.run(
-                ["osascript", "-e", script_click_group_tab],
-                capture_output=True, text=True, timeout=15,
+                ["osascript", "-e", script],
+                capture_output=True, text=True, timeout=25,
             )
-            out = result.stdout.strip().lower()
-            if out == "true":
-                self._last_error = ""
-                return True
-            self._last_error = f"AX 未找到群聊 Tab: {result.stderr.strip()}"
+            if result.returncode != 0:
+                self._last_error = result.stderr.strip()
+                return False
+            self._last_error = ""
+            return True
         except Exception as exc:
             self._last_error = str(exc)
-
-        return False
+            return False
 
     def open_chat_dingtalk(self, name: str) -> bool:
         """Search for *name* in DingTalk and open the chat."""
