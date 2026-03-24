@@ -57,12 +57,8 @@ class FeishuAdapter(AppAdapter):
         return ("飞书", "Feishu", "Lark")
 
     def activate(self) -> None:
-        for name in _FEISHU_PROCESSES:
-            try:
-                self._platform.activate_app(name)
-                return
-            except Exception:
-                continue
+        # platform 层会自动解析 "Lark" → 实际 App 名称
+        self._platform.activate_app("Lark")
 
     def open_chat(self, name: str) -> bool:
         """Search for *name* in Feishu and open the conversation.

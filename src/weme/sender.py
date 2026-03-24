@@ -95,7 +95,11 @@ class TaskExecutor:
 
             ok = adapter.open_chat(task.target)
             if not ok:
-                raise RuntimeError(f"未能打开「{task.target}」（需要辅助功能权限）")
+                # 尝试拿到平台层的详细错误
+                plat = getattr(adapter, "_platform", None)
+                extra = getattr(plat, "_last_error", "") or ""
+                hint = extra[:100] if extra else "请确认辅助功能权限已开启"
+                raise RuntimeError(f"未能打开「{task.target}」: {hint}")
             time.sleep(0.8)
 
             # 发送文字

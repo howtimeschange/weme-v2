@@ -66,15 +66,16 @@ end run
 """
 
 # ── 微信：搜索并打开聊天 ───────────────────────────────────────────────────────
-# 微信 Mac 版搜索入口：Cmd+F（全局搜索），或点击搜索图标。
-# 这里用 Cmd+F 触发搜索框，输入名字，等结果，然后点击第一条「聊天」类结果。
+# argv: 1=appName(真实App名), 2=contactName
+# 微信进程名始终是 WeChat（CFBundleExecutable），和显示名无关。
 _WECHAT_OPEN_CHAT_SCRIPT = """
 on run argv
-    set contactName to item 1 of argv
+    set appName to item 1 of argv
+    set contactName to item 2 of argv
     set didOpen to false
 
-    tell application "WeChat" to activate
-    delay 0.6
+    tell application appName to activate
+    delay 0.8
 
     tell application "System Events"
         tell process "WeChat"
@@ -88,13 +89,11 @@ on run argv
             keystroke contactName
             delay 1.2
 
-            -- 尝试找到搜索结果列表中的第一个可点击行
-            -- 微信搜索结果分组：联系人 / 群聊 / 聊天记录
-            -- 直接按 Down + Enter 选第一个结果
+            -- ↓ 选第一个结果，Enter 打开
             key code 125  -- down arrow
             delay 0.3
             key code 36   -- return / enter
-            delay 0.4
+            delay 0.6
             set didOpen to true
         end tell
     end tell
@@ -103,14 +102,15 @@ end run
 """
 
 # ── 钉钉：搜索并打开聊天 ───────────────────────────────────────────────────────
-# 钉钉 Mac 版搜索：Cmd+F 或点击左上角搜索图标。
+# argv: 1=appName, 2=contactName
 _DINGTALK_OPEN_CHAT_SCRIPT = """
 on run argv
-    set contactName to item 1 of argv
+    set appName to item 1 of argv
+    set contactName to item 2 of argv
     set didOpen to false
 
-    tell application "DingTalk" to activate
-    delay 0.6
+    tell application appName to activate
+    delay 0.8
 
     tell application "System Events"
         tell process "DingTalk"
@@ -125,7 +125,7 @@ on run argv
             key code 125  -- down
             delay 0.3
             key code 36   -- enter
-            delay 0.4
+            delay 0.6
             set didOpen to true
         end tell
     end tell
@@ -134,28 +134,20 @@ end run
 """
 
 # ── 飞书：搜索并打开聊天 ───────────────────────────────────────────────────────
-# 飞书 Mac 版搜索：Cmd+K（全局搜索）。
+# argv: 1=appName, 2=contactName
+# 飞书进程名：Lark（CFBundleExecutable）
 _FEISHU_OPEN_CHAT_SCRIPT = """
 on run argv
-    set contactName to item 1 of argv
+    set appName to item 1 of argv
+    set contactName to item 2 of argv
     set didOpen to false
 
-    -- 尝试多个进程名（中文/英文安装）
-    set fsApp to missing value
-    set processList to {"飞书", "Lark", "Feishu"}
-    repeat with pName in processList
-        try
-            tell application pName to activate
-            set fsApp to pName
-            exit repeat
-        end try
-    end repeat
-    if fsApp is missing value then return "false"
-    delay 0.6
+    tell application appName to activate
+    delay 0.8
 
+    -- 飞书全局搜索快捷键 Cmd+K
     tell application "System Events"
-        tell process fsApp
-            -- 飞书全局搜索快捷键
+        tell process "Lark"
             keystroke "k" using command down
             delay 0.8
 
@@ -167,7 +159,7 @@ on run argv
             key code 125  -- down
             delay 0.3
             key code 36   -- enter
-            delay 0.4
+            delay 0.6
             set didOpen to true
         end tell
     end tell
@@ -219,35 +211,76 @@ end run
 class MacOSPlatform(PlatformAutomation):
     """macOS platform automation using AppleScript and pyautogui"""
 
+    # ── App name resolution ───────────────────────────────────────────────
+
+    # 缓存：bundle-executable-name → 真实 App 显示名
+    _app_name_cache: dict[str, str] = {}
+
+    # 已知别名表：各种常见叫法 → /Applications/ 下的真实名称（不含 .app）
+    _APP_ALIASES: dict[str, list[str]] = {
+        "WeChat":   ["微信 3", "微信", "WeChat"],
+        "DingTalk": ["DingTalk", "钉钉"],
+        "Feishu":   ["Lark", "飞书", "Feishu"],
+        "Lark":     ["Lark", "飞书", "Feishu"],
+    }
+
+    def _resolve_app_name(self, name: str) -> str:
+        """将进程名/别名解析为 /Applications/ 下实际存在的 App 名称。"""
+        if name in self._app_name_cache:
+            return self._app_name_cache[name]
+
+        candidates = self._APP_ALIASES.get(name, [name])
+        for candidate in candidates:
+            app_path = f"/Applications/{candidate}.app"
+            result = subprocess.run(
+                ["test", "-d", app_path], capture_output=True
+            )
+            if result.returncode == 0:
+                self._app_name_cache[name] = candidate
+                return candidate
+
+        # fallback：返回原始名称
+        return name
+
     # ── App activation ────────────────────────────────────────────────────
 
     def activate_app(self, app_name: str) -> None:
-        subprocess.run(["open", "-a", app_name], check=True)
+        resolved = self._resolve_app_name(app_name)
+        subprocess.run(["open", "-a", resolved], check=True)
         time.sleep(0.5)
 
     # ── Search & open chat ────────────────────────────────────────────────
 
     def open_chat_wechat(self, name: str) -> bool:
         """Search for *name* in WeChat and open the chat."""
-        return self._run_open_chat(_WECHAT_OPEN_CHAT_SCRIPT, name)
+        app_name = self._resolve_app_name("WeChat")
+        return self._run_open_chat(_WECHAT_OPEN_CHAT_SCRIPT, app_name, name)
 
     def open_chat_dingtalk(self, name: str) -> bool:
         """Search for *name* in DingTalk and open the chat."""
-        return self._run_open_chat(_DINGTALK_OPEN_CHAT_SCRIPT, name)
+        app_name = self._resolve_app_name("DingTalk")
+        return self._run_open_chat(_DINGTALK_OPEN_CHAT_SCRIPT, app_name, name)
 
     def open_chat_feishu(self, name: str) -> bool:
         """Search for *name* in Feishu/Lark and open the chat."""
-        return self._run_open_chat(_FEISHU_OPEN_CHAT_SCRIPT, name)
+        app_name = self._resolve_app_name("Lark")
+        return self._run_open_chat(_FEISHU_OPEN_CHAT_SCRIPT, app_name, name)
 
-    def _run_open_chat(self, script: str, name: str) -> bool:
+    def _run_open_chat(self, script: str, app_name: str, contact_name: str) -> bool:
         try:
             result = subprocess.run(
-                ["osascript", "-e", script, name],
-                capture_output=True, text=True, timeout=15,
+                ["osascript", "-e", script, app_name, contact_name],
+                capture_output=True, text=True, timeout=20,
             )
             out = result.stdout.strip().lower()
+            if result.returncode != 0 or (result.stderr and "error" in result.stderr.lower()):
+                # 记录 stderr 方便调试，但不抛出——返回 False 让调用方处理
+                self._last_error = result.stderr.strip()
+            else:
+                self._last_error = ""
             return out == "true"
-        except Exception:
+        except Exception as exc:
+            self._last_error = str(exc)
             return False
 
     # ── Accessibility read ────────────────────────────────────────────────
