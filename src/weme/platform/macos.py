@@ -68,7 +68,7 @@ end run
 # ── 微信：搜索并打开聊天 ───────────────────────────────────────────────────────
 # argv: 1=appName(真实App名), 2=contactName
 # 微信进程名始终是 WeChat（CFBundleExecutable），和显示名无关。
-# 搜索脚本只接收 appName（argv 1）和 processName（argv 2）
+# 搜索脚本只接收 appName（argv 1）
 # 联系人名已由 Python 层通过 pbcopy 写入剪贴板，脚本直接 Cmd+V 粘贴
 _WECHAT_OPEN_CHAT_SCRIPT = """
 on run argv
@@ -80,12 +80,32 @@ on run argv
 
     tell application "System Events"
         tell process "WeChat"
+            -- 打开搜索框
             keystroke "f" using command down
             delay 0.8
+            -- 清空并粘贴联系人名（已由 Python pbcopy 写入剪贴板）
             keystroke "a" using command down
             delay 0.15
             keystroke "v" using command down
             delay 1.5
+
+            -- 微信搜索下拉：第一项是"搜索网络结果"，之后是搜索建议词，最底部才是"群聊"
+            -- 按 Enter 进入全局搜索结果页（会关闭下拉，进入完整搜索结果）
+            key code 36
+            delay 1.2
+
+            -- 全局搜索结果页有分类 Tab：联系人 / 群聊 / 聊天记录 ...
+            -- 微信用 Tab 键切换分类，按一次 Tab 从"综合"切到"联系人"，再按切"群聊"
+            -- 更稳定：用快捷键 Cmd+数字 选 Tab（微信无此快捷键），改用 Tab+Tab
+            -- 实测：搜索结果页有"群组"分组，直接 ↓ 移动到群组行，Enter 打开
+            -- 先连按若干次 ↓ 跳过联系人到群聊（通常前面有0-3个联系人）
+            -- 用 Tab 切换到"群聊"分类最可靠
+            key code 48  -- Tab：切换到第一个分类（联系人）
+            delay 0.3
+            key code 48  -- Tab：切换到第二个分类（群聊）
+            delay 0.5
+
+            -- 现在在"群聊"分类结果里，↓ 选第一个，Enter 打开
             key code 125
             delay 0.4
             key code 36
@@ -113,8 +133,9 @@ on run argv
             delay 0.15
             keystroke "v" using command down
             delay 1.5
-            key code 125
-            delay 0.4
+
+            -- 钉钉搜索：第一项"你可能想找"已经是最匹配结果，直接 Enter 确认即可
+            -- 不按 ↓，直接 Enter 选择"你可能想找"高亮项
             key code 36
             delay 0.8
             set didOpen to true
@@ -134,6 +155,7 @@ on run argv
 
     tell application "System Events"
         tell process "Lark"
+            -- 飞书全局搜索 Cmd+K
             keystroke "k" using command down
             delay 0.8
             keystroke "a" using command down
