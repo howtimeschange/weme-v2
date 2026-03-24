@@ -163,6 +163,35 @@ def send(
         raise typer.Exit(1)
 
 
+@app.command(name="open")
+def open_chat(
+    name: str = typer.Argument(..., help="联系人或群聊名称"),
+    app_key: str = typer.Option("wechat", "--app", "-a",
+                                help="目标应用 (wechat/dingtalk/feishu)"),
+) -> None:
+    """搜索并打开指定联系人/群聊的对话窗口
+
+    示例：
+      weme open 张三
+      weme open 产品讨论群 --app feishu
+      weme open 项目组 --app dingtalk
+    """
+    if app_key not in APP_CHOICES:
+        typer.echo(f"错误: 不支持 {app_key!r}", err=True)
+        raise typer.Exit(1)
+
+    from .apps.registry import get_app_adapter
+
+    adapter = get_app_adapter(app_key)
+    typer.echo(f"正在 {app_key} 中搜索「{name}」...")
+    ok = adapter.open_chat(name)
+    if ok:
+        typer.echo(f"✓ 已打开「{name}」的对话")
+    else:
+        typer.echo(f"⚠ 未能确认打开「{name}」（AppleScript 可能需要辅助功能权限）", err=True)
+        raise typer.Exit(1)
+
+
 @app.command()
 def bootstrap(
     history_file: Path = typer.Argument(..., help="导出的聊天记录文件"),
@@ -198,6 +227,143 @@ def bootstrap(
             count += 1
 
     typer.echo(f"已回灌 {count} 行记录到联系人 [{contact_name}]")
+
+
+# ── 批量发送命令 ──────────────────────────────────────────────────────────────
+
+@app.command()
+def template(
+    output: Path = typer.Argument(
+        None, help="输出路径（默认 ~/Desktop/weme_batch_template.xlsx）"
+    ),
+) -> None:
+    """生成 Excel 批量发送模版文件
+
+    \b
+    示例：
+      weme template
+      weme template ~/Documents/task.xlsx
+    """
+    from .batch import create_template
+
+    out = output or (Path.home() / "Desktop" / "weme_batch_template.xlsx")
+    out.parent.mkdir(parents=True, exist_ok=True)
+    create_template(out)
+    typer.echo(f"✅ 模版已生成：{out}")
+    typer.echo("   用 Excel/WPS 打开，填写任务后执行：weme batch <文件路径>")
+
+
+@app.command()
+def batch(
+    excel_file: Path = typer.Argument(..., help="Excel 任务文件路径"),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", "-n", help="仅解析预览，不实际发送"
+    ),
+    interval: float = typer.Option(
+        2.0, "--interval", "-i", help="相邻立即任务间隔秒数"
+    ),
+    var: list[str] = typer.Option(
+        [], "--var", "-v",
+        help="变量替换，格式 key=value，可多次传入。如 -v name=张三 -v date=今天"
+    ),
+) -> None:
+    """从 Excel 表格批量发送消息（支持定时/重复任务）
+
+    \b
+    示例：
+      weme batch tasks.xlsx
+      weme batch tasks.xlsx --dry-run          # 预览不发送
+      weme batch tasks.xlsx -v name=张三       # 变量替换
+      weme batch tasks.xlsx --interval 3       # 任务间隔 3 秒
+    """
+    if not excel_file.exists():
+        typer.echo(f"❌ 文件不存在: {excel_file}", err=True)
+        raise typer.Exit(1)
+
+    from .batch import parse_excel, TaskStatus
+    from .sender import BatchScheduler
+
+    # 解析变量
+    variables: dict[str, str] = {}
+    for v in var:
+        if "=" in v:
+            k, _, vv = v.partition("=")
+            variables[k.strip()] = vv.strip()
+
+    # 解析任务
+    try:
+        tasks = parse_excel(excel_file)
+    except Exception as exc:
+        typer.echo(f"❌ 解析失败: {exc}", err=True)
+        raise typer.Exit(1)
+
+    if not tasks:
+        typer.echo("⚠  没有找到任何任务行")
+        return
+
+    # 预览
+    typer.echo(f"\n{'─'*56}")
+    typer.echo(f"  📋 共 {len(tasks)} 条任务  {'（干运行，不实际发送）' if dry_run else ''}")
+    typer.echo(f"{'─'*56}")
+
+    now_str = lambda t: t.send_at.strftime("%m-%d %H:%M") if t.send_at else "立即"
+    for t in tasks:
+        icon = {"wechat": "💬", "dingtalk": "📌", "feishu": "🪶"}.get(t.app.value, "📨")
+        preview = (t.text[:28] + "…") if len(t.text) > 28 else t.text
+        img_tag = f" [📷{Path(t.image_path).name}]" if t.image_path else ""
+        repeat_tag = f" [{t.repeat}]" if t.repeat else ""
+        typer.echo(
+            f"  {icon} {t.app.value:8s} | {t.target:18s} | "
+            f"{now_str(t):12s}{repeat_tag} | {preview}{img_tag}"
+        )
+
+    typer.echo(f"{'─'*56}\n")
+
+    if dry_run:
+        typer.echo("dry-run 完成，未实际发送。")
+        return
+
+    if not typer.confirm("确认发送以上任务？"):
+        typer.echo("已取消。")
+        return
+
+    # 执行
+    completed = [0]
+    failed_list: list[str] = []
+
+    def on_update(task):
+        icon = "✓" if task.status == TaskStatus.DONE else (
+               "✗" if task.status == TaskStatus.FAILED else "…")
+        msg = f"  {icon} 行{task.row_num} {task.target}: {task.status.value}"
+        if task.error:
+            msg += f"  ({task.error[:40]})"
+        typer.echo(msg)
+        if task.status == TaskStatus.FAILED:
+            failed_list.append(task.target)
+
+    scheduler = BatchScheduler(
+        tasks=tasks,
+        excel_path=excel_file,
+        on_update=on_update,
+        variables=variables,
+        interval_secs=interval,
+    )
+
+    typer.echo("开始发送...\n")
+    try:
+        scheduler.start()
+        scheduler.wait(timeout=3600)  # 最多等 1 小时
+    except KeyboardInterrupt:
+        scheduler.stop()
+        typer.echo("\n⚠  已中断")
+
+    summary = scheduler.summary
+    typer.echo(f"\n{'─'*40}")
+    typer.echo(f"  发送完成: {summary.get('已完成', 0)} / {len(tasks)}")
+    if summary.get("失败", 0):
+        typer.echo(f"  失败: {summary['失败']} 条 — {', '.join(failed_list)}")
+    typer.echo(f"  状态已回写到: {excel_file.name}")
+    typer.echo(f"{'─'*40}")
 
 
 if __name__ == "__main__":

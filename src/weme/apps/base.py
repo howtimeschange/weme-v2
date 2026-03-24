@@ -28,13 +28,27 @@ class AppAdapter(ABC):
         ...
 
     @abstractmethod
+    def open_chat(self, name: str) -> bool:
+        """Search for and open a chat with *name* (contact or group).
+
+        Returns True if the chat was successfully opened, False otherwise.
+        Implementations should activate the app, trigger the search UI,
+        type the query, wait for results and click the first match.
+        """
+        ...
+
+    @abstractmethod
     def send_text(self, text: str, press_enter: bool = True) -> None:
         """Send the given text via the app"""
         ...
 
     @abstractmethod
     def read_snapshot(self) -> AppSnapshot:
-        """Capture the current state of the app window"""
+        """Capture the current state of the app window.
+
+        The returned snapshot MUST include a `history` field with structured
+        ChatTurn entries parsed from the visible chat window.
+        """
         ...
 
     @abstractmethod

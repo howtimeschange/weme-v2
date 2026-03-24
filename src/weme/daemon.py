@@ -149,15 +149,26 @@ class AutoReplyDaemon:
         message_lines = snapshot.message_lines
         prior_lines = message_lines[:-1] if len(message_lines) > 1 else ()
 
+        # Prefer structured history from snapshot (speaker-attributed ChatTurns).
+        # Fall back to heuristic line-based parsing when history is empty.
+        if snapshot.history:
+            # Exclude the very last turn if it's the latest_inbound (avoid duplication)
+            history_turns = snapshot.history
+            if history_turns and history_turns[-1].content.strip() == latest_inbound.strip():
+                history_turns = history_turns[:-1]
+            conversation = history_turns[-self.config.history_window:]
+        else:
+            conversation = _turns_from_lines(
+                prior_lines[-self.config.history_window:],
+                last_sent_text=state.last_sent_text,
+            )
+
         request = ReplyRequest(
             contact_name=chat_title,
             contact_id=chat_title,
             chat_id=chat_id,
             latest_inbound=latest_inbound,
-            conversation=_turns_from_lines(
-                prior_lines[-self.config.history_window:],
-                last_sent_text=state.last_sent_text,
-            ),
+            conversation=conversation,
             workspace_root=self.config.workspace_root,
             profile=self.config.profile,
             max_reply_chars=self.config.max_reply_chars,

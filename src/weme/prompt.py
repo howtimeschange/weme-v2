@@ -62,7 +62,12 @@ class PromptBuilder:
         # Format conversation history
         history_lines = []
         for turn in request.conversation:
-            prefix = "用户" if turn.role == "user" else "我"
+            if turn.role == "self":
+                prefix = turn.speaker or "我"
+            elif turn.speaker:
+                prefix = turn.speaker
+            else:
+                prefix = "对方"
             history_lines.append(f"{prefix}：{turn.content}")
         conversation_history = "\n".join(history_lines) if history_lines else "（无历史记录）"
 

@@ -314,13 +314,18 @@ class WemeDashboard:
 
         self._build_sidebar(outer)
 
-        center = tk.Frame(outer, bg=C["bg"])
-        center.pack(side="left", fill="both", expand=True)
-        self._build_topbar(center)
-        Divider(center).pack(fill="x")
-        self._build_content(center)
-        self._build_statusbar()
+        # 主内容区（聊天监听视图）
+        self._main_view = tk.Frame(outer, bg=C["bg"])
+        self._main_view.pack(side="left", fill="both", expand=True)
+        self._build_topbar(self._main_view)
+        Divider(self._main_view).pack(fill="x")
+        self._build_content(self._main_view)
 
+        # 批量任务视图（初始隐藏）
+        self._batch_view = tk.Frame(outer, bg=C["bg"])
+        self._build_batch_panel(self._batch_view)
+
+        self._build_statusbar()
         self._build_right_panel(outer)
         self.root.after(500, self._poll_queue)
 
@@ -336,6 +341,7 @@ class WemeDashboard:
 
         Divider(sb).pack(fill="x", padx=10, pady=10)
 
+        # 聊天 App 按钮
         self._sidebar_btns: dict[str, tk.Frame] = {}
         for key, meta in APP_META.items():
             frame = tk.Frame(sb, bg=C["surface"], cursor="hand2")
@@ -347,10 +353,26 @@ class WemeDashboard:
                           fg=C["text3"], font=FONT_TAG)
             lb.pack()
             for w in (frame, ic, lb):
-                w.bind("<Button-1>", lambda _, k=key: self._switch_app(k))
+                w.bind("<Button-1>", lambda _, k=key: self._switch_to_chat(k))
                 w.bind("<Enter>",    lambda _, f=frame: self._sb_hover(f, True))
                 w.bind("<Leave>",    lambda _, f=frame: self._sb_hover(f, False))
             self._sidebar_btns[key] = frame
+
+        Divider(sb).pack(fill="x", padx=10, pady=8)
+
+        # 批量任务按钮
+        self._batch_sb_btn = tk.Frame(sb, bg=C["surface"], cursor="hand2")
+        self._batch_sb_btn.pack(fill="x", pady=3)
+        batch_ic = tk.Label(self._batch_sb_btn, text="📋", font=("Helvetica", 18),
+                            bg=C["surface"], fg=C["text2"])
+        batch_ic.pack()
+        batch_lb = tk.Label(self._batch_sb_btn, text="批量", bg=C["surface"],
+                            fg=C["text3"], font=FONT_TAG)
+        batch_lb.pack()
+        for w in (self._batch_sb_btn, batch_ic, batch_lb):
+            w.bind("<Button-1>", lambda _: self._switch_to_batch())
+            w.bind("<Enter>",    lambda _, f=self._batch_sb_btn: self._sb_hover(f, True))
+            w.bind("<Leave>",    lambda _, f=self._batch_sb_btn: self._sb_hover(f, False))
 
         tk.Frame(sb, bg=C["surface"]).pack(expand=True)
         Divider(sb).pack(fill="x", padx=10, pady=8)
@@ -379,15 +401,42 @@ class WemeDashboard:
             except: pass
 
     def _sb_select(self, app_key):
+        # 取消激活批量按钮
+        self._sb_deactivate_btn(self._batch_sb_btn)
         for k, f in self._sidebar_btns.items():
             active = k == app_key
             bg = C["surface3"] if active else C["surface"]
             f.configure(bg=bg)
             for w in f.winfo_children():
                 try:
-                    w.configure(bg=bg,
-                                fg=C["accent"] if active else C["text3"])
+                    w.configure(bg=bg, fg=C["accent"] if active else C["text3"])
                 except: pass
+
+    def _sb_deactivate_btn(self, frame):
+        frame.configure(bg=C["surface"])
+        for w in frame.winfo_children():
+            try: w.configure(bg=C["surface"], fg=C["text3"])
+            except: pass
+
+    def _switch_to_chat(self, app_key: str):
+        """切换到聊天监听视图"""
+        self._batch_view.pack_forget()
+        self._main_view.pack(side="left", fill="both", expand=True)
+        self._sb_deactivate_btn(self._batch_sb_btn)
+        self._switch_app(app_key)
+
+    def _switch_to_batch(self):
+        """切换到批量任务视图"""
+        self._main_view.pack_forget()
+        self._batch_view.pack(side="left", fill="both", expand=True)
+        # 高亮批量按钮，取消 app 按钮高亮
+        for f in self._sidebar_btns.values():
+            self._sb_deactivate_btn(f)
+        self._batch_sb_btn.configure(bg=C["surface3"])
+        for w in self._batch_sb_btn.winfo_children():
+            try: w.configure(bg=C["surface3"], fg=C["accent"])
+            except: pass
+        self._set_status("批量任务模式")
 
     def _build_topbar(self, parent):
         bar = tk.Frame(parent, bg=C["surface"], height=52)
@@ -405,6 +454,24 @@ class WemeDashboard:
         self._hdr_sub = tk.Label(left, text="就绪", font=FONT_TAG,
                                   bg=C["surface"], fg=C["text3"])
         self._hdr_sub.pack(side="left")
+
+        # ── 搜索联系人/群聊输入框 ──────────────────────────────────────────
+        search_frame = tk.Frame(left, bg=C["surface3"],
+                                highlightthickness=1,
+                                highlightbackground=C["border"],
+                                highlightcolor=C["accent"])
+        search_frame.pack(side="left", padx=(20, 0), pady=12)
+        tk.Label(search_frame, text="🔍", bg=C["surface3"],
+                 fg=C["text3"], font=("Helvetica", 12)).pack(side="left", padx=(6, 2))
+        self._search_var = tk.StringVar()
+        self._search_entry = tk.Entry(
+            search_frame, textvariable=self._search_var,
+            bg=C["surface3"], fg=C["text"], insertbackground=C["text"],
+            relief=tk.FLAT, font=FONT_UI, width=18
+        )
+        self._search_entry.pack(side="left", padx=(0, 6), pady=4)
+        self._search_entry.bind("<Return>", lambda _: self._open_chat_from_search())
+        self._search_entry.bind("<KP_Enter>", lambda _: self._open_chat_from_search())
 
         right = tk.Frame(bar, bg=C["surface"])
         right.pack(side="right", padx=16, fill="y")
@@ -488,6 +555,252 @@ class WemeDashboard:
 
         # 欢迎提示
         self._add_msg("👋  欢迎使用虾说，点击「▶ 监听」开始", "system")
+
+    # ── 批量任务面板 ──────────────────────────────────────────────────────────
+
+    def _build_batch_panel(self, parent):
+        """批量发送任务面板"""
+        import tkinter.filedialog as fd
+
+        # 顶部标题栏
+        hdr = tk.Frame(parent, bg=C["surface"], height=52)
+        hdr.pack(fill="x")
+        hdr.pack_propagate(False)
+
+        tk.Label(hdr, text="📋  批量发送任务", font=FONT_TITLE,
+                 bg=C["surface"], fg=C["text"]).pack(side="left", padx=16, pady=12)
+
+        btn_row = tk.Frame(hdr, bg=C["surface"])
+        btn_row.pack(side="right", padx=16, pady=10)
+
+        FlatButton(btn_row, "⬇  生成模版", command=self._batch_gen_template,
+                   style="default", width=110, height=30).pack(side="left", padx=4)
+        FlatButton(btn_row, "📂  导入表格", command=self._batch_import,
+                   style="primary", width=110, height=30).pack(side="left", padx=4)
+
+        Divider(parent).pack(fill="x")
+
+        # 文件路径显示
+        path_bar = tk.Frame(parent, bg=C["surface2"])
+        path_bar.pack(fill="x", padx=12, pady=6)
+        self._batch_path_var = tk.StringVar(value="尚未导入任务表格")
+        tk.Label(path_bar, textvariable=self._batch_path_var,
+                 bg=C["surface2"], fg=C["text2"], font=FONT_SMALL,
+                 anchor="w").pack(side="left", padx=8, pady=4)
+
+        # 任务列表（Treeview）
+        tree_frame = tk.Frame(parent, bg=C["bg"])
+        tree_frame.pack(fill="both", expand=True, padx=12, pady=4)
+
+        cols = ("app", "target", "type", "preview", "send_at", "repeat", "status")
+        col_names = ("应用", "联系人/群聊", "类型", "内容预览", "发送时间", "重复", "状态")
+        col_widths = (60, 140, 80, 200, 120, 60, 70)
+
+        style = ttk.Style()
+        style.configure("Batch.Treeview",
+            background=C["surface"], fieldbackground=C["surface"],
+            foreground=C["text"], rowheight=24,
+            borderwidth=0, font=("Helvetica", 10))
+        style.configure("Batch.Treeview.Heading",
+            background=C["surface3"], foreground=C["text2"],
+            font=("Helvetica", 10, "bold"), borderwidth=0)
+        style.map("Batch.Treeview",
+            background=[("selected", C["accent_dim"])],
+            foreground=[("selected", C["white"])])
+
+        self._batch_tree = ttk.Treeview(
+            tree_frame, columns=cols, show="headings",
+            style="Batch.Treeview"
+        )
+        for col, name, w in zip(cols, col_names, col_widths):
+            self._batch_tree.heading(col, text=name)
+            self._batch_tree.column(col, width=w, minwidth=40, anchor="center")
+        self._batch_tree.column("preview", anchor="w")
+        self._batch_tree.column("target", anchor="w")
+
+        vsb = ttk.Scrollbar(tree_frame, orient="vertical",
+                            command=self._batch_tree.yview)
+        self._batch_tree.configure(yscrollcommand=vsb.set)
+        self._batch_tree.pack(side="left", fill="both", expand=True)
+        vsb.pack(side="right", fill="y")
+
+        # 底部操作栏
+        Divider(parent).pack(fill="x", padx=12, pady=4)
+        ctrl = tk.Frame(parent, bg=C["bg"])
+        ctrl.pack(fill="x", padx=12, pady=8)
+
+        # 变量替换输入
+        var_row = tk.Frame(ctrl, bg=C["bg"])
+        var_row.pack(fill="x", pady=(0, 6))
+        tk.Label(var_row, text="变量替换 key=value，用逗号分隔：",
+                 bg=C["bg"], fg=C["text2"], font=FONT_SMALL).pack(side="left")
+        self._batch_var_entry = tk.Entry(
+            var_row, bg=C["surface3"], fg=C["text"],
+            insertbackground=C["text"], relief=tk.FLAT, font=FONT_UI,
+            highlightthickness=1, highlightbackground=C["border"],
+            highlightcolor=C["accent"], width=30
+        )
+        self._batch_var_entry.insert(0, "name=张三,date=今天")
+        self._batch_var_entry.pack(side="left", padx=8)
+
+        # 执行按钮行
+        exec_row = tk.Frame(ctrl, bg=C["bg"])
+        exec_row.pack(fill="x")
+
+        self._batch_status_lbl = tk.Label(
+            exec_row, text="就绪", bg=C["bg"], fg=C["text3"], font=FONT_SMALL
+        )
+        self._batch_status_lbl.pack(side="left")
+
+        FlatButton(exec_row, "▶  立即执行", command=self._batch_run,
+                   style="success", width=120, height=34).pack(side="right", padx=(8, 0))
+        FlatButton(exec_row, "👁  预览", command=self._batch_dry_run,
+                   style="default", width=80, height=34).pack(side="right", padx=(8, 0))
+
+        self._batch_tasks: list = []
+        self._batch_file: "Path | None" = None
+
+    def _batch_gen_template(self):
+        from tkinter import filedialog
+        from pathlib import Path
+        from .batch import create_template
+
+        out = filedialog.asksaveasfilename(
+            title="保存模版到",
+            defaultextension=".xlsx",
+            filetypes=[("Excel 文件", "*.xlsx")],
+            initialfile="weme_batch_template.xlsx",
+        )
+        if not out:
+            return
+        try:
+            create_template(Path(out))
+            self._batch_status_lbl.configure(
+                text=f"✅ 模版已生成：{Path(out).name}", fg=C["green"]
+            )
+            self._log(f"模版生成: {out}")
+        except Exception as exc:
+            self._batch_status_lbl.configure(text=f"❌ {exc}", fg=C["red"])
+
+    def _batch_import(self):
+        from tkinter import filedialog
+        from pathlib import Path
+        from .batch import parse_excel
+
+        path = filedialog.askopenfilename(
+            title="选择任务 Excel",
+            filetypes=[("Excel 文件", "*.xlsx *.xls")],
+        )
+        if not path:
+            return
+        try:
+            tasks = parse_excel(Path(path))
+            self._batch_tasks = tasks
+            self._batch_file = Path(path)
+            self._batch_path_var.set(f"📄 {Path(path).name}  ({len(tasks)} 条任务)")
+            self._refresh_batch_tree(tasks)
+            self._batch_status_lbl.configure(
+                text=f"已加载 {len(tasks)} 条任务", fg=C["text2"]
+            )
+            self._log(f"批量任务已导入: {Path(path).name}")
+        except Exception as exc:
+            self._batch_status_lbl.configure(text=f"❌ 解析失败: {exc}", fg=C["red"])
+
+    def _refresh_batch_tree(self, tasks):
+        self._batch_tree.delete(*self._batch_tree.get_children())
+        STATUS_TAGS = {
+            "已完成": "done", "失败": "fail",
+            "发送中": "running", "已计划": "scheduled",
+        }
+        self._batch_tree.tag_configure("done",      background=C["green_dim"],   foreground=C["green"])
+        self._batch_tree.tag_configure("fail",      background=C["red_dim"],     foreground=C["red"])
+        self._batch_tree.tag_configure("running",   background=C["accent_dim"],  foreground=C["white"])
+        self._batch_tree.tag_configure("scheduled", background=C["surface3"],    foreground=C["yellow"])
+
+        for t in tasks:
+            send_at = t.send_at.strftime("%m-%d %H:%M") if t.send_at else "立即"
+            preview = (t.text[:30] + "…") if len(t.text) > 30 else t.text
+            app_icon = {"wechat": "💬", "dingtalk": "📌", "feishu": "🪶"}.get(t.app.value, "")
+            tag = STATUS_TAGS.get(t.status.value, "")
+            self._batch_tree.insert("", "end", iid=str(t.row_num), tags=(tag,), values=(
+                f"{app_icon} {t.app.value}",
+                t.target,
+                t.msg_type.value,
+                preview,
+                send_at,
+                t.repeat or "单次",
+                t.status.value,
+            ))
+
+    def _parse_batch_vars(self) -> dict[str, str]:
+        raw = self._batch_var_entry.get().strip()
+        result: dict[str, str] = {}
+        for pair in raw.split(","):
+            pair = pair.strip()
+            if "=" in pair:
+                k, _, v = pair.partition("=")
+                result[k.strip()] = v.strip()
+        return result
+
+    def _batch_dry_run(self):
+        if not self._batch_tasks:
+            self._batch_status_lbl.configure(text="⚠ 先导入任务表格", fg=C["yellow"])
+            return
+        self._refresh_batch_tree(self._batch_tasks)
+        self._batch_status_lbl.configure(
+            text=f"预览: {len(self._batch_tasks)} 条任务（未发送）", fg=C["text2"]
+        )
+
+    def _batch_run(self):
+        if not self._batch_tasks:
+            self._batch_status_lbl.configure(text="⚠ 先导入任务表格", fg=C["yellow"])
+            return
+
+        from .batch import TaskStatus
+        from .sender import BatchScheduler
+
+        variables = self._parse_batch_vars()
+        self._batch_status_lbl.configure(text="⏳ 正在执行...", fg=C["yellow"])
+
+        def on_update(task):
+            # 更新 tree 中对应行
+            try:
+                send_at = task.send_at.strftime("%m-%d %H:%M") if task.send_at else "立即"
+                preview = (task.text[:30] + "…") if len(task.text) > 30 else task.text
+                app_icon = {"wechat": "💬", "dingtalk": "📌", "feishu": "🪶"}.get(task.app.value, "")
+                STATUS_TAGS = {
+                    "已完成": "done", "失败": "fail",
+                    "发送中": "running", "已计划": "scheduled",
+                }
+                tag = STATUS_TAGS.get(task.status.value, "")
+                iid = str(task.row_num)
+                if self._batch_tree.exists(iid):
+                    self._batch_tree.item(iid, tags=(tag,), values=(
+                        f"{app_icon} {task.app.value}", task.target,
+                        task.msg_type.value, preview, send_at,
+                        task.repeat or "单次", task.status.value,
+                    ))
+            except Exception:
+                pass
+            self._log(f"[批量] 行{task.row_num} {task.target}: {task.status.value}")
+
+        def run_thread():
+            scheduler = BatchScheduler(
+                tasks=self._batch_tasks,
+                excel_path=self._batch_file,
+                on_update=on_update,
+                variables=variables,
+                interval_secs=2.0,
+            )
+            scheduler.start()
+            scheduler.wait(timeout=3600)
+            summary = scheduler.summary
+            done = summary.get("已完成", 0)
+            fail = summary.get("失败", 0)
+            self.reply_queue.put(("status",
+                f"批量完成: ✓{done} ✗{fail} / {len(self._batch_tasks)}", None))
+
+        threading.Thread(target=run_thread, daemon=True).start()
 
     def _build_right_panel(self, parent):
         rp = tk.Frame(parent, bg=C["surface"], width=310)
@@ -586,6 +899,27 @@ class WemeDashboard:
             self._stop_daemon()
             self._start_daemon()
 
+    def _open_chat_from_search(self):
+        """搜索框按 Enter：打开指定联系人/群聊"""
+        name = self._search_var.get().strip()
+        if not name:
+            return
+        meta = APP_META[self.current_app]
+        self._set_status(f"正在 {meta['label']} 中搜索「{name}」...")
+        self._log(f"搜索: {name}（{meta['label']}）")
+
+        def _do():
+            from .apps.registry import get_app_adapter
+            adapter = get_app_adapter(self.current_app)
+            ok = adapter.open_chat(name)
+            if ok:
+                self.reply_queue.put(("status", f"✓ 已打开「{name}」", None))
+            else:
+                self.reply_queue.put(("status", f"⚠ 未能确认打开「{name}」（需辅助功能权限）", None))
+
+        threading.Thread(target=_do, daemon=True).start()
+        self._search_var.set("")  # 清空输入框
+
     def _toggle_watch(self):
         if self._watching:
             self._stop_daemon()
@@ -644,6 +978,10 @@ class WemeDashboard:
                 elif kind == "error":
                     _, msg, _ = item
                     self._log(f"⚠ {msg}")
+                elif kind == "status":
+                    _, msg, _ = item
+                    self._set_status(msg)
+                    self._log(msg)
         except:
             pass
         self.root.after(500, self._poll_queue)

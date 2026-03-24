@@ -12,17 +12,25 @@ RiskLevel = Literal["low", "medium", "high"]
 
 
 @dataclass(frozen=True)
+class ChatTurn:
+    """Single turn in a conversation, with speaker attribution."""
+    role: str        # "user" | "assistant" | "self"
+    content: str
+    speaker: str = ""   # display name of the speaker (empty = unknown)
+    ts: str = ""        # raw timestamp string from app UI
+
+
+@dataclass(frozen=True)
 class AppSnapshot:
     app_name: str
     window_title: str
     raw_text: str
     message_lines: tuple[str, ...]
-
-
-@dataclass(frozen=True)
-class ChatTurn:
-    role: str  # "user" | "assistant"
-    content: str
+    # Structured chat history parsed from the window.
+    # Turns are ordered oldest → newest.
+    # role="self" means the local user sent the message.
+    # role="user"  means a remote contact sent it.
+    history: tuple[ChatTurn, ...] = ()
 
 
 @dataclass(frozen=True)
