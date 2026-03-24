@@ -83,29 +83,41 @@ on run argv
             -- 打开搜索框
             keystroke "f" using command down
             delay 0.8
-            -- 清空并粘贴联系人名（已由 Python pbcopy 写入剪贴板）
+            -- 清空并粘贴（已由 Python pbcopy 写入剪贴板）
             keystroke "a" using command down
             delay 0.15
             keystroke "v" using command down
             delay 1.5
 
-            -- 微信搜索下拉：第一项是"搜索网络结果"，之后是搜索建议词，最底部才是"群聊"
-            -- 按 Enter 进入全局搜索结果页（会关闭下拉，进入完整搜索结果）
+            -- 方案：直接 Enter 进入微信全局搜索结果页（不靠 ↓ 数量）
             key code 36
-            delay 1.2
+            delay 1.5
 
-            -- 全局搜索结果页有分类 Tab：联系人 / 群聊 / 聊天记录 ...
-            -- 微信用 Tab 键切换分类，按一次 Tab 从"综合"切到"联系人"，再按切"群聊"
-            -- 更稳定：用快捷键 Cmd+数字 选 Tab（微信无此快捷键），改用 Tab+Tab
-            -- 实测：搜索结果页有"群组"分组，直接 ↓ 移动到群组行，Enter 打开
-            -- 先连按若干次 ↓ 跳过联系人到群聊（通常前面有0-3个联系人）
-            -- 用 Tab 切换到"群聊"分类最可靠
-            key code 48  -- Tab：切换到第一个分类（联系人）
-            delay 0.3
-            key code 48  -- Tab：切换到第二个分类（群聊）
-            delay 0.5
+            -- 全局搜索结果页有多个分类 Tab（联系人/群聊/聊天记录等）
+            -- 用 Accessibility 找到"群聊"Tab 并点击
+            set foundGroupTab to false
+            try
+                set allBtns to every button of front window
+                repeat with btn in allBtns
+                    if title of btn is "群聊" then
+                        click btn
+                        set foundGroupTab to true
+                        delay 0.5
+                        exit repeat
+                    end if
+                end repeat
+            end try
 
-            -- 现在在"群聊"分类结果里，↓ 选第一个，Enter 打开
+            -- 如果找不到 Tab（可能在 toolbar 里），用 Tab 键切换
+            if not foundGroupTab then
+                -- Tab×1 → 联系人, Tab×2 → 群聊
+                key code 48
+                delay 0.3
+                key code 48
+                delay 0.5
+            end if
+
+            -- 选第一个结果 ↓ + Enter
             key code 125
             delay 0.4
             key code 36
