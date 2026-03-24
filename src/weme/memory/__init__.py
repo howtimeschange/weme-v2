@@ -3,9 +3,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from .core.types import MemoryContext, KnowledgeChunk
-from .workspace import WorkspacePaths
-from .defaults import default_profile
+from ..core.types import MemoryContext, KnowledgeChunk
+from ..workspace import WorkspacePaths
+from ..defaults import default_profile
 
 if TYPE_CHECKING:
     from .core.types import ReplyRequest
