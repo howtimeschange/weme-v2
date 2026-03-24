@@ -71,6 +71,8 @@ class WeChatAdapter(AppAdapter):
         return self._platform.open_chat_wechat(name)
 
     def send_text(self, text: str, press_enter: bool = True) -> None:
+        self._platform.click_input_box("WeChat")
+        time.sleep(0.3)
         self._platform.write_clipboard(text)
         time.sleep(0.1)
         self._platform.paste_and_send(press_enter=press_enter)
