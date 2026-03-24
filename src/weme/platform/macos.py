@@ -74,6 +74,9 @@ on run argv
     set contactName to item 2 of argv
     set didOpen to false
 
+    -- 先把联系人名写入剪贴板（避免 keystroke 经过输入法乱码）
+    set the clipboard to contactName
+
     tell application appName to activate
     delay 0.8
 
@@ -83,10 +86,10 @@ on run argv
             keystroke "f" using command down
             delay 0.8
 
-            -- 清空并输入联系人名
+            -- 清空搜索框，粘贴中文名称
             keystroke "a" using command down
             delay 0.1
-            keystroke contactName
+            keystroke "v" using command down  -- Cmd+V 粘贴
             delay 1.2
 
             -- ↓ 选第一个结果，Enter 打开
@@ -102,12 +105,13 @@ end run
 """
 
 # ── 钉钉：搜索并打开聊天 ───────────────────────────────────────────────────────
-# argv: 1=appName, 2=contactName
 _DINGTALK_OPEN_CHAT_SCRIPT = """
 on run argv
     set appName to item 1 of argv
     set contactName to item 2 of argv
     set didOpen to false
+
+    set the clipboard to contactName
 
     tell application appName to activate
     delay 0.8
@@ -119,7 +123,7 @@ on run argv
 
             keystroke "a" using command down
             delay 0.1
-            keystroke contactName
+            keystroke "v" using command down
             delay 1.2
 
             key code 125  -- down
@@ -134,26 +138,26 @@ end run
 """
 
 # ── 飞书：搜索并打开聊天 ───────────────────────────────────────────────────────
-# argv: 1=appName, 2=contactName
-# 飞书进程名：Lark（CFBundleExecutable）
 _FEISHU_OPEN_CHAT_SCRIPT = """
 on run argv
     set appName to item 1 of argv
     set contactName to item 2 of argv
     set didOpen to false
 
+    set the clipboard to contactName
+
     tell application appName to activate
     delay 0.8
 
-    -- 飞书全局搜索快捷键 Cmd+K
     tell application "System Events"
         tell process "Lark"
+            -- 飞书全局搜索 Cmd+K
             keystroke "k" using command down
             delay 0.8
 
             keystroke "a" using command down
             delay 0.1
-            keystroke contactName
+            keystroke "v" using command down
             delay 1.2
 
             key code 125  -- down
