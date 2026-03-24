@@ -49,10 +49,10 @@ APP_META = {
 
 # ── Widgets ───────────────────────────────────────────────────────────────────
 
-class FlatButton(tk.Frame):
-    """扁平风格按钮"""
+class FlatButton:
+    """扁平风格按钮（不继承 tk.Frame 以避免 Tk9 _w 兼容问题）"""
     _PALETTES = {
-        "default": (C["surface3"], C["border"],   C["text"]),
+        "default": (C["surface3"], C["border"],    C["text"]),
         "primary": (C["accent_dim"], C["accent"],  C["white"]),
         "success": (C["green_dim"],  C["green"],   C["white"]),
         "danger":  (C["red_dim"],    C["red"],      C["white"]),
@@ -60,21 +60,28 @@ class FlatButton(tk.Frame):
 
     def __init__(self, parent, text="", command=None, style="default",
                  width=120, height=36, **kw):
-        super().__init__(parent, bg=C["bg"], **kw)
         self._text = text
         self._cmd = command
         self._style = style
-        self._w = width
-        self._h = height
+        self._btn_w = width
+        self._btn_h = height
         self._hover = False
 
-        self._cv = tk.Canvas(self, width=width, height=height,
-                             bg=C["bg"], highlightthickness=0)
-        self._cv.pack()
+        self._cv = tk.Canvas(parent, width=width, height=height,
+                             bg=parent.cget("bg") if hasattr(parent, "cget") else C["bg"],
+                             highlightthickness=0)
         self._cv.bind("<Enter>", lambda _: self._set_hover(True))
         self._cv.bind("<Leave>", lambda _: self._set_hover(False))
         self._cv.bind("<Button-1>", lambda _: self._click())
         self._draw()
+
+    def pack(self, **kw):
+        self._cv.pack(**kw)
+        return self
+
+    def grid(self, **kw):
+        self._cv.grid(**kw)
+        return self
 
     def _draw(self):
         cv = self._cv
@@ -82,8 +89,7 @@ class FlatButton(tk.Frame):
         bg, border, fg = self._PALETTES.get(self._style, self._PALETTES["default"])
         if self._hover:
             bg = border
-        w, h, r = self._w, self._h, 7
-        # rounded rect
+        w, h, r = self._btn_w, self._btn_h, 7
         cv.create_polygon(
             r, 0, w-r, 0, w, r, w, h-r, w-r, h, r, h, 0, h-r, 0, r,
             fill=bg, outline=border, smooth=True
